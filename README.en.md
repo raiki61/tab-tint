@@ -18,6 +18,12 @@ The stopped state — reading, waiting, anything not actively generating — alw
 
 A hook runs as a subprocess of Claude Code and has no controlling terminal of its own. So it walks up the process tree to find the real pty (`ttysNNN` / `pts/N`) and writes OSC 11 (set background color) / OSC 111 (reset) directly to it.
 
+### The design principle: what this actually measures
+
+tab-tint measures exactly one thing: **can you type into this screen's input box right now?** It does not measure "does this need attention" or "is something important in progress."
+
+That line is drawn on purpose. Kick off a background task — a subagent via `/code-review`, say — and the interactive turn itself completes, `Stop` fires, and the color reverts to normal. Work is still happening behind the scenes, so this can look like a bug at first. It isn't: input to this screen was never blocked, so you could send another message right away, and that's the only thing the color is supposed to reflect. Trying to track every kind of "something is happening" — wiring up `SubagentStart`/`SubagentStop`/`TaskCreated`/`TaskCompleted` and the rest — adds real state-tracking complexity and, worse, actually drifts away from the one thing this is meant to answer. When in doubt, judge by that single question alone: can you type here right now?
+
 ## Manual toggle
 
 Commands for switching on the spot, without waiting for the automatic on/off.
