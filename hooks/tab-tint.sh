@@ -19,11 +19,15 @@ resolve_tty() {
   return 1
 }
 
+case "${1:-}" in
+  on|off) ;;
+  *) echo "usage: $0 {on|off}" >&2; exit 1 ;;
+esac
+
 tty_path=$(resolve_tty) || exit 0
 [ -w "$tty_path" ] || exit 0
 
-case "${1:-}" in
+case "$1" in
   on)  printf '\033]11;%s\007' "$WAIT_COLOR" > "$tty_path" ;;
   off) printf '\033]111\007' > "$tty_path" ;;
-  *)   echo "usage: $0 {on|off}" >&2; exit 1 ;;
 esac

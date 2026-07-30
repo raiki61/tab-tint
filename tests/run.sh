@@ -38,7 +38,7 @@ done
 
 PYTHON=$(command -v python3 || command -v python)
 for f in .claude-plugin/plugin.json .claude-plugin/marketplace.json hooks/hooks.json; do
-  check "$f is valid JSON" "true" "$("$PYTHON" -c "import json,sys; json.load(open('$f'))" 2>/dev/null && echo true || echo false)"
+  check "$f is valid JSON" "true" "$("$PYTHON" -c "import json,sys; json.load(open('$f', encoding='utf-8'))" 2>/dev/null && echo true || echo false)"
 done
 
 echo "---"
