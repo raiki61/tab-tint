@@ -75,6 +75,18 @@ if [ "${OS:-}" = "Windows_NT" ]; then
   check "windows: 'off end' leaves no state file" "false" \
     "$([ -f "$sd/state-test-session" ] && echo true || echo false)"
 
+  # ターンの頭は状態が同じでも書き直す(端末に色を取り上げられていても復帰させる)。
+  # ただしunsupportedの端末では払わない——毎ターンcmdを起動しても届かないため。
+  printf 'on\n' > "$sd/state-test-session"; rm -f "$seq_on"
+  run_isolated on prompt
+  check "windows: 'on prompt' rewrites even when the state already says on" "true" \
+    "$([ -s "$seq_on" ] && echo true || echo false)"
+
+  printf 'unsupported\n' > "$sd/state-test-session"; rm -f "$seq_on"
+  run_isolated on prompt
+  check "windows: 'on prompt' still honors unsupported" "false" \
+    "$([ -s "$seq_on" ] && echo true || echo false)"
+
   # 手動オーバーライド(force)の回帰ガード。状態の短絡に任せると「もうonだ」
   # 「この端末はunsupportedだ」で何も書かずに成功を返す——見た目を確認する
   # ための道具が黙ってno-opになる。書きに行ったことは、消したシーケンス
@@ -131,6 +143,11 @@ done
 # 状態の置き場をCLAUDE_PLUGIN_DATAから引かないことをソースでも固定する。
 check "the hook does not read CLAUDE_PLUGIN_DATA" "true" \
   "$(grep -q '\${CLAUDE_PLUGIN_DATA' hooks/tab-tint.sh && echo false || echo true)"
+
+# UserPromptSubmitだけが短絡を外す側。ここが素の`on`に戻ると、端末に色を
+# 取り上げられたまま次の切り替わりまで戻らなくなる。
+check "hooks.json passes 'prompt' on UserPromptSubmit" "true" \
+  "$(grep -qE 'tab-tint\.sh.{0,4}" on prompt' hooks/hooks.json && echo true || echo false)"
 
 for f in .claude-plugin/plugin.json .claude-plugin/marketplace.json hooks/hooks.json skills/off/SKILL.md skills/on/SKILL.md README.md README.en.md; do
   check "$f exists" "true" "$([ -f "$f" ] && echo true || echo false)"

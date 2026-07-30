@@ -155,7 +155,12 @@ if [ "$prev" = "unsupported" ]; then
   exit 0
 fi
 
-if [ "$prev" = "$action" ]; then
+# ターンの頭(UserPromptSubmit)だけは、状態が同じでも書き直す。効いた色を端末側が
+# 取り上げてしまうことがあるため——VS Codeはタブ切り替えとテーマ再適用のたびに
+# 既定色へ戻す(microsoft/vscode#312815)。短絡に任せると次にon/offが切り替わるまで
+# 色が戻らないので、ターンごとに1回だけ書き直して復帰させる。毎ツール発火する
+# PreToolUseの短絡はそのまま残す(cmdの起動コストを毎回払わないため)。
+if [ "$prev" = "$action" ] && [ "$source_event" != "prompt" ]; then
   [ "$source_event" = "end" ] && rm -f "$state_file" 2>/dev/null
   exit 0
 fi
