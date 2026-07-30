@@ -113,11 +113,22 @@ after:  attr=0x0007 table0=0x0C0C0C  ← OSC 11は内部状態すら変えずに
 
 文字は届くのにOSC 11だけが消える。つまりコンソールが飲んでいる。
 
-- **Windows Terminal**: 同梱の`OpenConsole.exe`がOSC 10/11/12を端末へ転送する。**効く**
-- **Android Studio / IntelliJ**: pty4j同梱の`OpenConsole.exe`（`lib/pty4j/win/x86-64/`）。**飲む**
-- **VS Code**: node-pty同梱の`OpenConsole.exe`。**飲む**
+| 端末 | 同梱ConPTYホスト | 結果 |
+| --- | --- | --- |
+| Windows Terminal | WT同梱 | **色が変わる** |
+| Android Studio / IntelliJ | pty4j同梱（`lib/pty4j/win/x86-64/OpenConsole.exe`） | 変わらない |
+| VS Code | node-pty同梱 | 変わらない |
 
-端末側の対応とは別問題である点に注意。VS Codeの端末（xterm.js）はOSC 11をフルサポートしているし、SSH越しのmacOSセッションをVS Codeで開けば背景色は変わる。変わらないのはWindowsローカルのConPTYを通る場合だけ。JediTermにもOSC 11の要望（[IJPL-218303](https://youtrack.jetbrains.com/projects/IJPL/issues/IJPL-218303/Support-OSC-11-escape-sequence-for-dynamic-terminal-background-colors)）はあるが、少なくともこの環境ではそこへ到達する前に消えている。
+**「pty4jのConPTYが飲む」のか「JediTermが無視する」のかは切り分けられていない。** バージョンの新しさでは説明がつかない——VS Code同梱は`1.25.2603`でWT同梱（`1.24.11911`）より新しいのに変わらない。JediTermにはOSC 11の要望（[IJPL-218303](https://youtrack.jetbrains.com/projects/IJPL/issues/IJPL-218303/Support-OSC-11-escape-sequence-for-dynamic-terminal-background-colors)）が出ているが、それが原因だと確認できたわけではない。
+
+切り分けたい場合の手順:
+
+1. **Claude Codeを起動していない素のシェルタブ**で`printf '\033]11;#004a00\007'`を打つ。ここで変われば、経路も端末も生きていて、フルスクリーンTUIの描画に隠れていただけということになる
+2. IntelliJ系なら`Help | Edit Custom VM Options`に`-Dcom.pty4j.windows.disable.bundled.conpty=true`を足して再起動する。同梱ConPTYをやめてOSのconhostを使うので、これで変われば犯人はpty4j同梱のConPTY
+
+同種の壁は他の実装でも報告されている。Neovimの`background`自動判定はWindows TerminalでOSC 11のクエリに応答が返らず動かない（[neovim#32238](https://github.com/neovim/neovim/issues/32238)）。ConPTY自体は**未知の**OSCは端末へ転送するが（[microsoft/terminal#17313](https://github.com/microsoft/terminal/issues/17313)）、OSC 11はconhostが知っているシーケンスなので内部で消費される余地がある。
+
+端末側の対応とは別問題である点にも注意。VS Codeの端末（xterm.js）はOSC 11をフルサポートしており、SSH越しのmacOSセッションをVS Codeで開けば背景色は変わる。変わらないのはWindowsローカルのConPTYを通る場合だけ。
 
 なお**この検証で一番危なかったのは計測方法**だった。画面全体をキャプチャして色を測ると、対象のウィンドウが前面から外れた瞬間に別のウィンドウを測ってしまい、動いている経路まで「効かない」と誤判定する。ウィンドウ単位で`PrintWindow`（`PW_RENDERFULLCONTENT`）を使えばz順に依存せず測れる。さらに確実なのは画面を撮らずに済ませることで、`GetConsoleScreenBufferInfoEx`のカラーテーブルと`ReadConsoleOutputCharacterW`の読み戻しなら、人の目もスクリーンショットも要らずに「書き込みが着地したか」「OSCが解釈されたか」を別々に判定できる。
 

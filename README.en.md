@@ -113,11 +113,22 @@ after:  attr=0x0007 table0=0x0C0C0C  <- OSC 11 vanishes without even changing in
 
 Text arrives; only OSC 11 disappears. The console is swallowing it.
 
-- **Windows Terminal**: its bundled `OpenConsole.exe` forwards OSC 10/11/12 to the terminal. **Works.**
-- **Android Studio / IntelliJ**: pty4j's bundled `OpenConsole.exe` (`lib/pty4j/win/x86-64/`). **Swallows it.**
-- **VS Code**: node-pty's bundled `OpenConsole.exe`. **Swallows it.**
+| Terminal | Bundled ConPTY host | Result |
+| --- | --- | --- |
+| Windows Terminal | bundled with WT | **background changes** |
+| Android Studio / IntelliJ | bundled with pty4j (`lib/pty4j/win/x86-64/OpenConsole.exe`) | no change |
+| VS Code | bundled with node-pty | no change |
 
-Note this is separate from terminal support. VS Code's terminal (xterm.js) fully supports OSC 11, and opening an SSH session to macOS in VS Code does change the background. It only fails when the bytes pass through a local Windows ConPTY. JediTerm has an open request for OSC 11 too ([IJPL-218303](https://youtrack.jetbrains.com/projects/IJPL/issues/IJPL-218303/Support-OSC-11-escape-sequence-for-dynamic-terminal-background-colors)), but in this environment the sequence dies before it ever gets there.
+**Whether pty4j's ConPTY swallows it or JediTerm ignores it has not been isolated.** Version recency doesn't explain it — VS Code bundles `1.25.2603`, newer than WT's `1.24.11911`, and still nothing changes. JediTerm has an open request for OSC 11 ([IJPL-218303](https://youtrack.jetbrains.com/projects/IJPL/issues/IJPL-218303/Support-OSC-11-escape-sequence-for-dynamic-terminal-background-colors)), but it has not been confirmed as the cause.
+
+To isolate it:
+
+1. In a **plain shell tab with no Claude Code running**, type `printf '\033]11;#004a00\007'`. If the colour changes there, both the route and the terminal are fine and it was merely hidden behind a full-screen TUI's own rendering.
+2. On IntelliJ-family IDEs, add `-Dcom.pty4j.windows.disable.bundled.conpty=true` via `Help | Edit Custom VM Options` and restart. That drops the bundled ConPTY in favour of the OS conhost; if the colour then changes, pty4j's bundled ConPTY is the culprit.
+
+The same wall shows up in other implementations. Neovim's `background` auto-detection doesn't work on Windows Terminal because the OSC 11 query gets no reply ([neovim#32238](https://github.com/neovim/neovim/issues/32238)). ConPTY does forward **unrecognised** OSC sequences to the terminal ([microsoft/terminal#17313](https://github.com/microsoft/terminal/issues/17313)), but OSC 11 is a sequence conhost knows, so there is room for it to be consumed internally.
+
+Note this is also separate from terminal support. VS Code's terminal (xterm.js) fully supports OSC 11, and opening an SSH session to macOS in VS Code does change the background. It only fails when the bytes pass through a local Windows ConPTY.
 
 One warning about verifying this: **the measurement method was the most dangerous part.** Capturing the whole screen and sampling pixels reads whatever window is on top, so the moment the target window loses z-order you measure a different window and conclude "it doesn't work" about a route that does. Per-window `PrintWindow` (with `PW_RENDERFULLCONTENT`) measures independently of z-order.
 
