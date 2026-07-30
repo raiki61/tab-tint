@@ -33,6 +33,8 @@ Commands for switching on the spot, without waiting for the automatic on/off.
 /tab-tint:on    # light it up right now (for previewing the look)
 ```
 
+Unlike the hooks, these two **bypass the state short-circuit**. The Windows side only writes when the state actually changes (see below), but honoring that for a manual invocation means deciding "it should already be on" and writing nothing — while still looking like it succeeded. A tool whose whole job is to show you the look must never silently become a no-op, so a manual toggle always writes, and overwrites the recorded state with the result (without that write-back, a manually darkened terminal would be short-circuited as "still on" and never light up again).
+
 Note that this works differently from the hooks. Hooks (`Notification` / `Stop`, etc.) are deterministic processes registered directly with the OS — they run instantly and for free, without involving the AI. This command, however, is a skill, so **Claude (the AI) reads the instructions in `SKILL.md` and decides to call the Bash tool** — that's a full conversational turn. It takes a few seconds and costs tokens. Using it for every single wait isn't practical; it's meant as a manual override for when you need it right now.
 
 Given how Claude Code is built, there's no way to make a command that a user can invoke on demand *and* that runs deterministically without the AI (skills/commands are always interpreted by the AI; hooks only fire on lifecycle events and can't be invoked on demand; keybindings can only reassign fixed built-in actions, not run arbitrary commands).
@@ -94,6 +96,8 @@ Instead the bytes go to the console device `CON`. There are two traps here as we
 What does work is `cmd`'s `copy /b <file> CON`. Opening `CONOUT$` and calling `WriteConsoleW` works equally well, but the `cmd` route needs no extra executable, so that's what's used.
 
 On Windows each write costs a `cmd` launch (a few hundred ms in some environments). `PreToolUse` fires on every single tool call, so the current state is tracked per `CLAUDE_CODE_SESSION_ID` and the write only happens **when the state actually changes**. If a write never lands, it isn't retried for the rest of that session (so a terminal that can't receive it doesn't cost a few hundred ms per tool call; `SessionEnd` clears the state, so the next session tries again). The POSIX side keeps no state, because there a write is essentially free.
+
+The state lives in a fixed location, `%LOCALAPPDATA%\Temp\tab-tint` (`TAB_TINT_STATE_DIR` overrides it, for tests). It deliberately does *not* use the plugin's `CLAUDE_PLUGIN_DATA` directory: that variable is handed to hooks but **not** to the manual commands, which run through the Bash tool. Reading it would split the state across two directories — sharing state in name only, so a manual "off" would leave the hook convinced it is still on. `CLAUDE_CODE_SESSION_ID` *is* present in both contexts, so the file name never splits.
 
 `hooks.json` prefixes the command with `bash "..."` to work around a known issue where a hook pointing at a `.sh` script isn't always run through bash ([#21847](https://github.com/anthropics/claude-code/issues/21847)).
 
