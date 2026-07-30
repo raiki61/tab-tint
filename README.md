@@ -77,9 +77,27 @@ OSC 11/111はターミナル固有の拡張ではなく標準的なエスケー�
 
 - **動作確認済み**: VS Code統合ターミナル（macOS）
 - **対応しているはず（未検証）**: iTerm2、kitty、GNOME Terminal等のVTEベース端末（Linux/macOS）
-- **Windows**: Git BashなどでOSC 11/111自体には対応した端末（Windows Terminal等）が必要。加えてClaude Code側に、hookが指す`.sh`スクリプトをbash経由で実行しないことがある既知の問題があるため（[#21847](https://github.com/anthropics/claude-code/issues/21847)）、`hooks.json`では`bash "..."`を明示的に前置している。実機未検証
+- **Windows（Git Bash + Windows Terminal）: 動作確認済み**。Windows Terminalで実際に背景色が変わることを確認した
+- **Windows（Android Studio / IntelliJ内蔵ターミナル）: 変わらない。** JediTermがOSC 11を実装していないため（[IJPL-218303](https://youtrack.jetbrains.com/projects/IJPL/issues/IJPL-218303/Support-OSC-11-escape-sequence-for-dynamic-terminal-background-colors)）。プラグイン側では手の打ちようが無い
 
-macOSの`ttysNNN`・Linuxの`pts/N`どちらの命名も扱うが、CIではLinux/macOS/Windows上でスクリプトの終了コードとJSON妥当性のみ検証しており、実機での色変化そのものはテストできていない。
+macOSの`ttysNNN`・Linuxの`pts/N`どちらの命名も扱うが、CIではLinux/macOS/Windows上でスクリプトの終了コード・状態ファイルの扱い・JSON妥当性のみ検証しており、実機での色変化そのものはテストできていない。
+
+### Windows側の書き込み先
+
+Windowsにはhookから辿れるptyが無い。`/dev/tty`は`ENXIO`で開けず、Git Bash同梱の`ps`は`-o`自体を実装していない（`ps: unknown option -- o`）ので、プロセスツリーを遡る手も使えない。**この2つが理由で、pty探索のコードはWindowsでは必ず失敗する。**
+
+代わりにコンソールデバイス`CON`へ書く。ここにも罠が2つある。
+
+- bashから`> CON`すると、`CON`という名前の**実ファイルがcwdに作られるだけ**で端末には届かない
+- `cmd`は`CONOUT$`をリダイレクト先として受け付けない（`ERROR_INVALID_NAME`）
+
+通るのは`cmd`の`copy /b <file> CON`。`CONOUT$`を開いて`WriteConsoleW`する経路も同様に効くが、`cmd`経由なら追加の実行ファイルが要らないのでこちらを採った。
+
+Windowsでは1回の書き込みに`cmd`の起動が要る（環境によっては数百ms）。`PreToolUse`は毎ツール呼び出しで発火するため、`CLAUDE_CODE_SESSION_ID`ごとに現在の状態を持ち、**状態が実際に変わるときだけ**書きに行く。書き込みが一度も届かなかった端末では、そのセッション中は再試行しない（届かない環境で毎ツール数百msを払い続けないため。`SessionEnd`で状態を消すので次のセッションでは再挑戦する）。POSIX側は書き込みが実質無償なので、この状態管理は持たない。
+
+`hooks.json`が`bash "..."`を前置しているのは、hookが指す`.sh`をbash経由で実行しないことがある既知の問題（[#21847](https://github.com/anthropics/claude-code/issues/21847)）への対策。
+
+なお**この検証で一番危なかったのは計測方法**だった。画面全体をキャプチャして色を測ると、対象のウィンドウが前面から外れた瞬間に別のウィンドウを測ってしまい、動いている経路まで「効かない」と誤判定する。ウィンドウ単位で`PrintWindow`（`PW_RENDERFULLCONTENT`）を使えばz順に依存せず測れる。
 
 ## 動作確認
 

@@ -77,9 +77,27 @@ OSC 11/111 aren't a proprietary extension of any one terminal — they're standa
 
 - **Confirmed working**: VS Code's integrated terminal (macOS)
 - **Should work (untested)**: iTerm2, kitty, and VTE-based terminals such as GNOME Terminal (Linux/macOS)
-- **Windows**: needs a terminal that supports OSC 11/111 itself (e.g. Windows Terminal) via something like Git Bash. On top of that, Claude Code has a known issue where a hook pointing at a `.sh` script isn't always run through bash ([#21847](https://github.com/anthropics/claude-code/issues/21847)), so `hooks.json` explicitly prefixes the command with `bash "..."`. Not tested on real hardware.
+- **Windows (Git Bash + Windows Terminal): confirmed working.** The background really does change in Windows Terminal.
+- **Windows (Android Studio / IntelliJ built-in terminal): no color change.** JediTerm doesn't implement OSC 11 ([IJPL-218303](https://youtrack.jetbrains.com/projects/IJPL/issues/IJPL-218303/Support-OSC-11-escape-sequence-for-dynamic-terminal-background-colors)). There is nothing this plugin can do about it.
 
-Both macOS's `ttysNNN` and Linux's `pts/N` naming are handled, but CI only verifies the script's exit codes and JSON validity on Linux/macOS/Windows — it can't test the actual background color change on real hardware.
+Both macOS's `ttysNNN` and Linux's `pts/N` naming are handled, but CI only verifies the script's exit codes, state-file handling, and JSON validity on Linux/macOS/Windows — it can't test the actual background color change on real hardware.
+
+### Where the bytes go on Windows
+
+On Windows there is no pty a hook can walk to. `/dev/tty` fails to open with `ENXIO`, and the `ps` bundled with Git Bash doesn't implement `-o` at all (`ps: unknown option -- o`), so walking the process tree isn't possible either. **Those two facts alone mean the pty-resolving code can never succeed on Windows.**
+
+Instead the bytes go to the console device `CON`. There are two traps here as well.
+
+- Redirecting to `> CON` from bash just **creates a real file named `CON` in the cwd** — nothing reaches the terminal.
+- `cmd` refuses `CONOUT$` as a redirection target (`ERROR_INVALID_NAME`).
+
+What does work is `cmd`'s `copy /b <file> CON`. Opening `CONOUT$` and calling `WriteConsoleW` works equally well, but the `cmd` route needs no extra executable, so that's what's used.
+
+On Windows each write costs a `cmd` launch (a few hundred ms in some environments). `PreToolUse` fires on every single tool call, so the current state is tracked per `CLAUDE_CODE_SESSION_ID` and the write only happens **when the state actually changes**. If a write never lands, it isn't retried for the rest of that session (so a terminal that can't receive it doesn't cost a few hundred ms per tool call; `SessionEnd` clears the state, so the next session tries again). The POSIX side keeps no state, because there a write is essentially free.
+
+`hooks.json` prefixes the command with `bash "..."` to work around a known issue where a hook pointing at a `.sh` script isn't always run through bash ([#21847](https://github.com/anthropics/claude-code/issues/21847)).
+
+One warning about verifying this: **the measurement method was the most dangerous part.** Capturing the whole screen and sampling pixels reads whatever window is on top, so the moment the target window loses z-order you measure a different window and conclude "it doesn't work" about a route that does. Per-window `PrintWindow` (with `PW_RENDERFULLCONTENT`) measures independently of z-order.
 
 ## Testing
 
