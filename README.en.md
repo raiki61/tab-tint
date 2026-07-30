@@ -77,8 +77,8 @@ OSC 11/111 aren't a proprietary extension of any one terminal — they're standa
 
 - **Confirmed working**: VS Code's integrated terminal (macOS)
 - **Should work (untested)**: iTerm2, kitty, and VTE-based terminals such as GNOME Terminal (Linux/macOS)
-- **Windows (Git Bash + Windows Terminal): confirmed working.** The background really does change in Windows Terminal.
-- **Windows (Android Studio / IntelliJ built-in terminal): no color change.** JediTerm doesn't implement OSC 11 ([IJPL-218303](https://youtrack.jetbrains.com/projects/IJPL/issues/IJPL-218303/Support-OSC-11-escape-sequence-for-dynamic-terminal-background-colors)). There is nothing this plugin can do about it.
+- **Windows (Windows Terminal): works.** The background really does change.
+- **Windows (Android Studio / IntelliJ built-in terminal, VS Code integrated terminal): no color change.** Not because of the terminal itself — the ConPTY host in front of it swallows OSC 11 (see below).
 
 Both macOS's `ttysNNN` and Linux's `pts/N` naming are handled, but CI only verifies the script's exit codes, state-file handling, and JSON validity on Linux/macOS/Windows — it can't test the actual background color change on real hardware.
 
@@ -96,6 +96,28 @@ What does work is `cmd`'s `copy /b <file> CON`. Opening `CONOUT$` and calling `W
 On Windows each write costs a `cmd` launch (a few hundred ms in some environments). `PreToolUse` fires on every single tool call, so the current state is tracked per `CLAUDE_CODE_SESSION_ID` and the write only happens **when the state actually changes**. If a write never lands, it isn't retried for the rest of that session (so a terminal that can't receive it doesn't cost a few hundred ms per tool call; `SessionEnd` clears the state, so the next session tries again). The POSIX side keeps no state, because there a write is essentially free.
 
 `hooks.json` prefixes the command with `bash "..."` to work around a known issue where a hook pointing at a `.sh` script isn't always run through bash ([#21847](https://github.com/anthropics/claude-code/issues/21847)).
+
+### On Windows, whether it works is decided by the ConPTY host
+
+Whether the bytes reach the terminal is decided not by the terminal's own capabilities but by **whether the `OpenConsole.exe` the terminal bundles forwards OSC 11**. This was measured.
+
+Opening `CONOUT$` from the same context a hook runs in (a Claude Code subprocess):
+
+```
+mode=0x0007 VT=True                  <- VT processing is enabled
+WriteConsoleW(text)  ok=True         <- text does land in the visible buffer (read back to confirm)
+WriteConsoleW(osc11) ok=True
+before: attr=0x0007 table0=0x0C0C0C
+after:  attr=0x0007 table0=0x0C0C0C  <- OSC 11 vanishes without even changing internal state
+```
+
+Text arrives; only OSC 11 disappears. The console is swallowing it.
+
+- **Windows Terminal**: its bundled `OpenConsole.exe` forwards OSC 10/11/12 to the terminal. **Works.**
+- **Android Studio / IntelliJ**: pty4j's bundled `OpenConsole.exe` (`lib/pty4j/win/x86-64/`). **Swallows it.**
+- **VS Code**: node-pty's bundled `OpenConsole.exe`. **Swallows it.**
+
+Note this is separate from terminal support. VS Code's terminal (xterm.js) fully supports OSC 11, and opening an SSH session to macOS in VS Code does change the background. It only fails when the bytes pass through a local Windows ConPTY. JediTerm has an open request for OSC 11 too ([IJPL-218303](https://youtrack.jetbrains.com/projects/IJPL/issues/IJPL-218303/Support-OSC-11-escape-sequence-for-dynamic-terminal-background-colors)), but in this environment the sequence dies before it ever gets there.
 
 One warning about verifying this: **the measurement method was the most dangerous part.** Capturing the whole screen and sampling pixels reads whatever window is on top, so the moment the target window loses z-order you measure a different window and conclude "it doesn't work" about a route that does. Per-window `PrintWindow` (with `PW_RENDERFULLCONTENT`) measures independently of z-order.
 

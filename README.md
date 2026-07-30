@@ -77,8 +77,8 @@ OSC 11/111はターミナル固有の拡張ではなく標準的なエスケー�
 
 - **動作確認済み**: VS Code統合ターミナル（macOS）
 - **対応しているはず（未検証）**: iTerm2、kitty、GNOME Terminal等のVTEベース端末（Linux/macOS）
-- **Windows（Git Bash + Windows Terminal）: 動作確認済み**。Windows Terminalで実際に背景色が変わることを確認した
-- **Windows（Android Studio / IntelliJ内蔵ターミナル）: 変わらない。** JediTermがOSC 11を実装していないため（[IJPL-218303](https://youtrack.jetbrains.com/projects/IJPL/issues/IJPL-218303/Support-OSC-11-escape-sequence-for-dynamic-terminal-background-colors)）。プラグイン側では手の打ちようが無い
+- **Windows（Windows Terminal）: 動く**。実際に背景色が変わることを確認した
+- **Windows（Android Studio / IntelliJ内蔵ターミナル、VS Code統合ターミナル）: 変わらない。** 端末の対応状況ではなく、**その手前のConPTYホストがOSC 11を飲んでしまう**（後述）
 
 macOSの`ttysNNN`・Linuxの`pts/N`どちらの命名も扱うが、CIではLinux/macOS/Windows上でスクリプトの終了コード・状態ファイルの扱い・JSON妥当性のみ検証しており、実機での色変化そのものはテストできていない。
 
@@ -97,7 +97,29 @@ Windowsでは1回の書き込みに`cmd`の起動が要る（環境によって�
 
 `hooks.json`が`bash "..."`を前置しているのは、hookが指す`.sh`をbash経由で実行しないことがある既知の問題（[#21847](https://github.com/anthropics/claude-code/issues/21847)）への対策。
 
-なお**この検証で一番危なかったのは計測方法**だった。画面全体をキャプチャして色を測ると、対象のウィンドウが前面から外れた瞬間に別のウィンドウを測ってしまい、動いている経路まで「効かない」と誤判定する。ウィンドウ単位で`PrintWindow`（`PW_RENDERFULLCONTENT`）を使えばz順に依存せず測れる。
+### Windowsで効くかどうかはConPTYホストで決まる
+
+書き込みが端末に届くかは、端末そのものの対応状況ではなく、**端末が同梱しているConPTYホスト（`OpenConsole.exe`）がOSC 11を転送するか**で決まる。ここは実測した。
+
+hookと同じ文脈（Claude Codeのサブプロセス）から`CONOUT$`を開いて測ると:
+
+```
+mode=0x0007 VT=True                  ← VT解釈は有効
+WriteConsoleW(text)  ok=True         ← 文字は可視バッファに着地する（読み戻して確認）
+WriteConsoleW(osc11) ok=True
+before: attr=0x0007 table0=0x0C0C0C
+after:  attr=0x0007 table0=0x0C0C0C  ← OSC 11は内部状態すら変えずに消える
+```
+
+文字は届くのにOSC 11だけが消える。つまりコンソールが飲んでいる。
+
+- **Windows Terminal**: 同梱の`OpenConsole.exe`がOSC 10/11/12を端末へ転送する。**効く**
+- **Android Studio / IntelliJ**: pty4j同梱の`OpenConsole.exe`（`lib/pty4j/win/x86-64/`）。**飲む**
+- **VS Code**: node-pty同梱の`OpenConsole.exe`。**飲む**
+
+端末側の対応とは別問題である点に注意。VS Codeの端末（xterm.js）はOSC 11をフルサポートしているし、SSH越しのmacOSセッションをVS Codeで開けば背景色は変わる。変わらないのはWindowsローカルのConPTYを通る場合だけ。JediTermにもOSC 11の要望（[IJPL-218303](https://youtrack.jetbrains.com/projects/IJPL/issues/IJPL-218303/Support-OSC-11-escape-sequence-for-dynamic-terminal-background-colors)）はあるが、少なくともこの環境ではそこへ到達する前に消えている。
+
+なお**この検証で一番危なかったのは計測方法**だった。画面全体をキャプチャして色を測ると、対象のウィンドウが前面から外れた瞬間に別のウィンドウを測ってしまい、動いている経路まで「効かない」と誤判定する。ウィンドウ単位で`PrintWindow`（`PW_RENDERFULLCONTENT`）を使えばz順に依存せず測れる。さらに確実なのは画面を撮らずに済ませることで、`GetConsoleScreenBufferInfoEx`のカラーテーブルと`ReadConsoleOutputCharacterW`の読み戻しなら、人の目もスクリーンショットも要らずに「書き込みが着地したか」「OSCが解釈されたか」を別々に判定できる。
 
 ## 動作確認
 
