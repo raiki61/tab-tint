@@ -4,7 +4,7 @@
 # 遡って実際のpty(ttysNNN/pts/N)を見つけてから直接OSC 11/111を書き込む。
 set -euo pipefail
 
-WAIT_COLOR="${TAB_TINT_COLOR:-#3a2a10}"
+WAIT_COLOR="${TAB_TINT_COLOR:-#2a2a2e}"
 
 resolve_tty() {
   local pid=$PPID
