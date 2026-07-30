@@ -21,8 +21,15 @@ resolve_tty() {
 
 case "${1:-}" in
   on|off) ;;
-  *) echo "usage: $0 {on|off}" >&2; exit 1 ;;
+  *) echo "usage: $0 {on|off} [source]" >&2; exit 1 ;;
 esac
+
+# Stopは応答が一段落するたびに毎回発火するため、デフォルトでは無視する
+# （返信してすぐ終わったセッションまで「待ち」扱いになってしまうため）。
+# TAB_TINT_ON_STOP=1 でオプトインすると、Stopでも点灯するようになる。
+if [ "${1}" = "on" ] && [ "${2:-}" = "stop" ] && [ "${TAB_TINT_ON_STOP:-}" != "1" ]; then
+  exit 0
+fi
 
 tty_path=$(resolve_tty) || exit 0
 [ -w "$tty_path" ] || exit 0

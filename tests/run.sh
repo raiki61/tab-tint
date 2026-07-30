@@ -28,6 +28,15 @@ check "'on' never errors out" "0" "$rc"
 out=$(hooks/tab-tint.sh off < /dev/null 2>&1); rc=$?
 check "'off' never errors out" "0" "$rc"
 
+# CIにはptyが無いのでresolve_tty側で常にexit 0になり、stopゲート自体の
+# 分岐(TAB_TINT_ON_STOP有無)を出口コードだけでは判別できない。ここでは
+# 追加した引数(source)を渡してもクラッシュしないことだけ検証する。
+out=$(hooks/tab-tint.sh on stop < /dev/null 2>&1); rc=$?
+check "'on stop' never errors out" "0" "$rc"
+
+out=$(TAB_TINT_ON_STOP=1 hooks/tab-tint.sh on stop < /dev/null 2>&1); rc=$?
+check "'on stop' with TAB_TINT_ON_STOP=1 never errors out" "0" "$rc"
+
 out=$(hooks/tab-tint.sh bogus < /dev/null 2>&1); rc=$?
 check "invalid arg exits 1" "1" "$rc"
 check "invalid arg prints usage" "true" "$(echo "$out" | grep -q '^usage:' && echo true || echo false)"
