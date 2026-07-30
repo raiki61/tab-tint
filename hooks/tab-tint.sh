@@ -24,10 +24,11 @@ case "${1:-}" in
   *) echo "usage: $0 {on|off} [source]" >&2; exit 1 ;;
 esac
 
-# Stopは応答が一段落するたびに毎回発火するため、デフォルトでは無視する
-# （返信してすぐ終わったセッションまで「待ち」扱いになってしまうため）。
-# TAB_TINT_ON_STOP=1 でオプトインすると、Stopでも点灯するようになる。
-if [ "${1}" = "on" ] && [ "${2:-}" = "stop" ] && [ "${TAB_TINT_ON_STOP:-}" != "1" ]; then
+# Stopは応答が一段落した瞬間に発火する。デフォルトでは点灯対象に含めて
+# 即座に分かるようにしているが、色が目に強すぎて読んでいる間に気が散る
+# 場合はTAB_TINT_ON_STOP=0でオプトアウトできる（idle_prompt側の
+# Notificationだけを待つようになる）。
+if [ "${1}" = "on" ] && [ "${2:-}" = "stop" ] && [ "${TAB_TINT_ON_STOP:-1}" = "0" ]; then
   exit 0
 fi
 

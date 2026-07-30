@@ -32,10 +32,10 @@ check "'off' never errors out" "0" "$rc"
 # 分岐(TAB_TINT_ON_STOP有無)を出口コードだけでは判別できない。ここでは
 # 追加した引数(source)を渡してもクラッシュしないことだけ検証する。
 out=$(hooks/tab-tint.sh on stop < /dev/null 2>&1); rc=$?
-check "'on stop' never errors out" "0" "$rc"
+check "'on stop' (デフォルト=有効) never errors out" "0" "$rc"
 
-out=$(TAB_TINT_ON_STOP=1 hooks/tab-tint.sh on stop < /dev/null 2>&1); rc=$?
-check "'on stop' with TAB_TINT_ON_STOP=1 never errors out" "0" "$rc"
+out=$(TAB_TINT_ON_STOP=0 hooks/tab-tint.sh on stop < /dev/null 2>&1); rc=$?
+check "'on stop' with TAB_TINT_ON_STOP=0 never errors out" "0" "$rc"
 
 out=$(hooks/tab-tint.sh bogus < /dev/null 2>&1); rc=$?
 check "invalid arg exits 1" "1" "$rc"
