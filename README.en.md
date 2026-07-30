@@ -4,21 +4,17 @@
 
 [日本語](README.md) | **English**
 
-A Claude Code plugin. **Tints the terminal background a subdued color while a response is wrapping up or you're genuinely waiting, and clears it automatically the moment you reply or work resumes.**
+A Claude Code plugin. **Tints the terminal background a subdued color while Claude is actively working (generating a response), and reverts it the moment it stops — whether that's because you're reading the reply or it's genuinely waiting on you.**
 
-When you run several Claude Code sessions side by side, a plain notification doesn't tell you which one is actually waiting. A desktop notification can reach you even when you're looking at a different tab, but you only find out which session it was once you click through. A background tint, on the other hand, lets you tell at a glance whether the session you're currently looking at is really waiting (it can't show you the color of tabs you aren't looking at, so pairing it with notifications is the practical setup).
+When you run several Claude Code sessions side by side, a plain notification doesn't tell you which one is actually busy right now. A background tint lets you tell at a glance whether the session you're currently looking at is working or has stopped (it can't show you the color of tabs you aren't looking at, so pairing it with notifications is the practical setup).
+
+The stopped state — reading, waiting, anything not actively generating — always stays your normal, untouched color. The tint only shows up while Claude is working, on purpose: having the terminal change color while you're in the middle of reading a response is distracting, so the color is deliberately confined to the "busy" period instead.
 
 ## How it works
 
-- When a response wraps up (`Stop`), or the session is genuinely left idle (`Notification` = `idle_prompt` / `permission_prompt`) → tint the background
-- When you reply or work resumes (`UserPromptSubmit` / `PreToolUse`) → revert it
-- When the session ends (`SessionEnd`) → revert it as a safety net
-
-`Stop` fires on every single response, so if the color were too strong it would be distracting even while you're reading. The default color is subdued (`#2a2a2e`) enough that this isn't a real concern, so it's enabled by default — but if it still bothers you, you can turn off just the `Stop` trigger.
-
-```bash
-export TAB_TINT_ON_STOP=0
-```
+- You reply, or work resumes (`UserPromptSubmit` / `PreToolUse`) → tint the background
+- A response wraps up, or the session is genuinely left idle (`Stop` / `Notification` = `idle_prompt` / `permission_prompt`) → revert to normal
+- The session ends (`SessionEnd`) → revert it as a safety net
 
 A hook runs as a subprocess of Claude Code and has no controlling terminal of its own. So it walks up the process tree to find the real pty (`ttysNNN` / `pts/N`) and writes OSC 11 (set background color) / OSC 111 (reset) directly to it.
 
@@ -60,7 +56,7 @@ export TAB_TINT_COLOR="#123456"
 
 ### Why this color
 
-Because `Stop` is enabled by default alongside genuine idle detection, **this color shows up while you're reading the response too** — it's effectively the default reading experience for almost every turn. So the priority wasn't "an attention-grabbing warning color" but "a color that doesn't tire you out to read against."
+The tint only shows while Claude is working, and reverts once it stops — so it's never in front of you while you're actually reading. Even so, it appears on essentially every turn, so the priority wasn't "an attention-grabbing warning color" but "a color that's unremarkable to see often."
 
 Candidates considered, and the reasoning:
 

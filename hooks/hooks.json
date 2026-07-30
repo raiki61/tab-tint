@@ -1,15 +1,15 @@
 {
   "hooks": {
-    "Notification": [
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/tab-tint.sh\" on" } ] }
+    ],
+    "PreToolUse": [
       { "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/tab-tint.sh\" on" } ] }
     ],
     "Stop": [
-      { "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/tab-tint.sh\" on stop" } ] }
-    ],
-    "UserPromptSubmit": [
       { "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/tab-tint.sh\" off" } ] }
     ],
-    "PreToolUse": [
+    "Notification": [
       { "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/tab-tint.sh\" off" } ] }
     ],
     "SessionEnd": [

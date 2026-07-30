@@ -1,10 +1,12 @@
 #!/bin/bash
-# Claude Codeが応答待ちの間だけ、そのセッションのターミナル背景を控えめな色にする。
-# hookはclaudeのサブプロセスとして動くため制御端末を持たず、プロセスツリーを
-# 遡って実際のpty(ttysNNN/pts/N)を見つけてから直接OSC 11/111を書き込む。
+# Claude Codeが作業中(応答生成中)の間だけ、そのセッションのターミナル背景を
+# 控えめな色にする。止まっている間(読んでいる間・待っている間)は常に
+# いつもの色のまま。hookはClaude Codeのサブプロセスとして動くため制御端末を
+# 持たず、プロセスツリーを遡って実際のpty(ttysNNN/pts/N)を見つけてから
+# 直接OSC 11/111を書き込む。
 set -euo pipefail
 
-WAIT_COLOR="${TAB_TINT_COLOR:-#2a2a2e}"
+WORKING_COLOR="${TAB_TINT_COLOR:-#2a2a2e}"
 
 resolve_tty() {
   local pid=$PPID
@@ -21,21 +23,13 @@ resolve_tty() {
 
 case "${1:-}" in
   on|off) ;;
-  *) echo "usage: $0 {on|off} [source]" >&2; exit 1 ;;
+  *) echo "usage: $0 {on|off}" >&2; exit 1 ;;
 esac
-
-# Stopは応答が一段落した瞬間に発火する。デフォルトでは点灯対象に含めて
-# 即座に分かるようにしているが、色が目に強すぎて読んでいる間に気が散る
-# 場合はTAB_TINT_ON_STOP=0でオプトアウトできる（idle_prompt側の
-# Notificationだけを待つようになる）。
-if [ "${1}" = "on" ] && [ "${2:-}" = "stop" ] && [ "${TAB_TINT_ON_STOP:-1}" = "0" ]; then
-  exit 0
-fi
 
 tty_path=$(resolve_tty) || exit 0
 [ -w "$tty_path" ] || exit 0
 
 case "$1" in
-  on)  printf '\033]11;%s\007' "$WAIT_COLOR" > "$tty_path" ;;
+  on)  printf '\033]11;%s\007' "$WORKING_COLOR" > "$tty_path" ;;
   off) printf '\033]111\007' > "$tty_path" ;;
 esac
