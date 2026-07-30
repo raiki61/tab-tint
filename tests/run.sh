@@ -47,9 +47,12 @@ check "the copy command is not wrapped in one quoted string" "true" \
 # POSIX側は書き込みが実質無償なので状態を持たない——その差をここで固定する。
 sd=$(mktemp -d "${TMPDIR:-/tmp}/tab-tint-test.XXXXXX")
 run_isolated() {
-  TAB_TINT_STATE_DIR="$sd" CLAUDE_CODE_SESSION_ID=test-session \
+  # 色は明示する。シーケンスファイル名が色から決まるので、実行環境の
+  # TAB_TINT_COLORを拾うとテストが見に行くファイル名がずれる。
+  TAB_TINT_STATE_DIR="$sd" CLAUDE_CODE_SESSION_ID=test-session TAB_TINT_COLOR='#2a2a2e' \
     hooks/tab-tint.sh "$@" < /dev/null > /dev/null 2>&1
 }
+seq_on="$sd/seq-on-2a2a2e.bin"
 
 if [ "${OS:-}" = "Windows_NT" ]; then
   run_isolated on
@@ -71,12 +74,63 @@ if [ "${OS:-}" = "Windows_NT" ]; then
   run_isolated off end
   check "windows: 'off end' leaves no state file" "false" \
     "$([ -f "$sd/state-test-session" ] && echo true || echo false)"
+
+  # 手動オーバーライド(force)の回帰ガード。状態の短絡に任せると「もうonだ」
+  # 「この端末はunsupportedだ」で何も書かずに成功を返す——見た目を確認する
+  # ための道具が黙ってno-opになる。書きに行ったことは、消したシーケンス
+  # ファイルが作り直されるかで判定する（端末の有無に依存しない）。
+  printf 'on\n' > "$sd/state-test-session"; rm -f "$seq_on"
+  run_isolated on force
+  check "windows: 'on force' writes even when the state already says on" "true" \
+    "$([ -s "$seq_on" ] && echo true || echo false)"
+
+  printf 'unsupported\n' > "$sd/state-test-session"; rm -f "$seq_on"
+  run_isolated on force
+  check "windows: 'on force' writes even when the state says unsupported" "true" \
+    "$([ -s "$seq_on" ] && echo true || echo false)"
+
+  # forceが状態を書き戻さないと、手動で消灯した画面をhookが「まだonのはずだ」と
+  # 短絡して二度と点けない。
+  printf 'sentinel\n' > "$sd/state-test-session"
+  run_isolated off force
+  state=$(cat "$sd/state-test-session" 2>/dev/null)
+  check "windows: 'force' records the resulting state" "true" \
+    "$([ "$state" = "off" ] || [ "$state" = "unsupported" ] && echo true || echo false)"
+
+  # 状態の置き場がhookと手動コマンドで割れないこと。hookにはCLAUDE_PLUGIN_DATAが
+  # 渡るがスキルはBashツールから走るので渡らない——ここでその変数を見ると
+  # 2箇所に分かれ、状態を共有しているつもりで共有できていない状態になる。
+  sd2=$(mktemp -d "${TMPDIR:-/tmp}/tab-tint-test2.XXXXXX")
+  pd=$(mktemp -d "${TMPDIR:-/tmp}/tab-tint-plugindata.XXXXXX")
+  env -u TAB_TINT_STATE_DIR CLAUDE_PLUGIN_DATA="$pd" LOCALAPPDATA="$sd2" \
+    CLAUDE_CODE_SESSION_ID=test-session TAB_TINT_COLOR='#2a2a2e' \
+    hooks/tab-tint.sh on < /dev/null > /dev/null 2>&1
+  check "windows: state does not follow CLAUDE_PLUGIN_DATA" "0" \
+    "$(find "$pd" -type f | wc -l | tr -d ' ')"
+  check "windows: state lands in the fixed location" "true" \
+    "$([ -f "$sd2/Temp/tab-tint/state-test-session" ] && echo true || echo false)"
+  rm -rf "$sd2" "$pd"
 else
   run_isolated on
   check "posix: no state file is created" "0" \
     "$(find "$sd" -type f | wc -l | tr -d ' ')"
+
+  run_isolated on force
+  check "posix: 'force' creates no state file either" "0" \
+    "$(find "$sd" -type f | wc -l | tr -d ' ')"
 fi
 rm -rf "$sd"
+
+# 手動コマンドは必ずforceを渡すこと。渡し忘れると状態の短絡に捕まって
+# 「実行したのに何も起きない」に戻る。
+for f in skills/on/SKILL.md skills/off/SKILL.md; do
+  check "$f invokes the hook with 'force'" "true" \
+    "$(grep -qE '"\$script" (on|off) force' "$f" && echo true || echo false)"
+done
+
+# 状態の置き場をCLAUDE_PLUGIN_DATAから引かないことをソースでも固定する。
+check "the hook does not read CLAUDE_PLUGIN_DATA" "true" \
+  "$(grep -q '\${CLAUDE_PLUGIN_DATA' hooks/tab-tint.sh && echo false || echo true)"
 
 for f in .claude-plugin/plugin.json .claude-plugin/marketplace.json hooks/hooks.json skills/off/SKILL.md skills/on/SKILL.md README.md README.en.md; do
   check "$f exists" "true" "$([ -f "$f" ] && echo true || echo false)"
