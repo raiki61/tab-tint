@@ -80,7 +80,8 @@ OSC 11/111 aren't a proprietary extension of any one terminal — they're standa
 - **Confirmed working**: VS Code's integrated terminal (macOS)
 - **Should work (untested)**: iTerm2, kitty, and VTE-based terminals such as GNOME Terminal (Linux/macOS)
 - **Windows (Windows Terminal): works.** The background really does change.
-- **Windows (Android Studio / IntelliJ built-in terminal, VS Code integrated terminal): no color change.** Not because of the terminal itself — the ConPTY host in front of it swallows OSC 11 (see below).
+- **Windows (Android Studio / IntelliJ built-in terminal): no color change.** JediTerm doesn't implement *setting* via OSC 11 (see below), and nothing on the plugin side can fix that.
+- **Windows (VS Code integrated terminal): applied, but not retained.** The terminal does apply it, then resets to the theme default on tab switches and theme re-application ([vscode#312815](https://github.com/microsoft/vscode/issues/312815)). The tint is re-asserted at the start of every turn (see below).
 
 Both macOS's `ttysNNN` and Linux's `pts/N` naming are handled, but CI only verifies the script's exit codes, state-file handling, and JSON validity on Linux/macOS/Windows — it can't test the actual background color change on real hardware.
 
@@ -97,35 +98,34 @@ What does work is `cmd`'s `copy /b <file> CON`. Opening `CONOUT$` and calling `W
 
 On Windows each write costs a `cmd` launch (a few hundred ms in some environments). `PreToolUse` fires on every single tool call, so the current state is tracked per `CLAUDE_CODE_SESSION_ID` and the write only happens **when the state actually changes**. If a write never lands, it isn't retried for the rest of that session (so a terminal that can't receive it doesn't cost a few hundred ms per tool call; `SessionEnd` clears the state, so the next session tries again). The POSIX side keeps no state, because there a write is essentially free.
 
+There is one exception. **`UserPromptSubmit` (the start of a turn) always rewrites, even when the state is unchanged.** A terminal can take the colour back after it was applied: VS Code resets to the theme default on tab switches and theme re-application ([vscode#312815](https://github.com/microsoft/vscode/issues/312815)). Honoring the short-circuit there would leave the terminal uncolored until the next on/off transition. The cost is one `cmd` launch per turn — the `PreToolUse` short-circuit, which fires on every tool call, is untouched. Terminals already known to be out of reach (`unsupported`) don't pay for the rewrite either.
+
 The state lives in a fixed location, `%LOCALAPPDATA%\Temp\tab-tint` (`TAB_TINT_STATE_DIR` overrides it, for tests). It deliberately does *not* use the plugin's `CLAUDE_PLUGIN_DATA` directory: that variable is handed to hooks but **not** to the manual commands, which run through the Bash tool. Reading it would split the state across two directories — sharing state in name only, so a manual "off" would leave the hook convinced it is still on. `CLAUDE_CODE_SESSION_ID` *is* present in both contexts, so the file name never splits.
 
 `hooks.json` prefixes the command with `bash "..."` to work around a known issue where a hook pointing at a `.sh` script isn't always run through bash ([#21847](https://github.com/anthropics/claude-code/issues/21847)).
 
-### On Windows, whether it works is decided by the ConPTY host
+### ConPTY swallows nothing (measured)
 
-Whether the bytes reach the terminal is decided not by the terminal's own capabilities but by **whether the `OpenConsole.exe` the terminal bundles forwards OSC 11**. This was measured.
+**It is not that the bytes fail to reach the terminal. They arrive, and then the terminals differ.**
 
-Opening `CONOUT$` from the same context a hook runs in (a Claude Code subprocess):
+This section used to claim that a local Windows ConPTY consumes OSC 11. **That was wrong.** Creating a ConPTY, running `cmd /c copy /b <file> CON` inside it (exactly what this plugin does) and reading the ConPTY's output pipe directly shows all three implementations forwarding it verbatim.
 
-```
-mode=0x0007 VT=True                  <- VT processing is enabled
-WriteConsoleW(text)  ok=True         <- text does land in the visible buffer (read back to confirm)
-WriteConsoleW(osc11) ok=True
-before: attr=0x0007 table0=0x0C0C0C
-after:  attr=0x0007 table0=0x0C0C0C  <- OSC 11 vanishes without even changing internal state
-```
-
-Text arrives; only OSC 11 disappears. The console is swallowing it.
-
-| Terminal | Bundled ConPTY host | Result |
+| ConPTY implementation | OSC 11 | DECSCNM (`CSI ?5h`) |
 | --- | --- | --- |
-| Windows Terminal | bundled with WT | **background changes** |
-| Android Studio / IntelliJ | bundled with pty4j (`lib/pty4j/win/x86-64/OpenConsole.exe`) | no change |
-| VS Code | bundled with node-pty | no change |
+| OS (`kernel32!CreatePseudoConsole`) | forwarded | forwarded |
+| Android Studio / IntelliJ (`lib/pty4j/win/x86-64/conpty.dll`) | forwarded | forwarded |
+| VS Code (node-pty, `1.25.2603.03002`) | forwarded | forwarded |
 
-There are two walls, and which ones you hit depends on the environment.
+```
+<ESC>[1t<ESC>[c<ESC>[?1004h<ESC>[?9001h<ESC>]11;#004a00<BEL>
+                                       ^^^^^^^^^^^^^^^^^^^^ straight out of the output pipe
+```
 
-**Wall 1: JediTerm doesn't implement *setting* via OSC 11.** [`doProcessOsc()` in JediEmulator.java](https://github.com/JetBrains/jediterm/blob/master/core/src/com/jediterm/terminal/emulator/JediEmulator.java) reads:
+This measurement needs no terminal, no screenshot and no human eye. The earlier negative conclusion came from reading the `GetConsoleScreenBufferInfoEx` colour table — which holds **only 16 colours**. OSC 11 rewrites palette entry **262**, the alias for the default background, so it can never show up there ([microsoft/terminal discussion #14142](https://github.com/microsoft/terminal/discussions/14142)).
+
+### What each terminal does with it
+
+**Android Studio / IntelliJ: JediTerm doesn't implement *setting* via OSC 11.** [`doProcessOsc()` in JediEmulator.java](https://github.com/JetBrains/jediterm/blob/master/core/src/com/jediterm/terminal/emulator/JediEmulator.java) reads:
 
 ```java
 case 10:
@@ -133,15 +133,19 @@ case 11:
   return processColorQuery(args);   // only answers '?'; there is no setter
 ```
 
-What it handles is OSC 0/1/2 (title), 7 (stub), 8 (hyperlinks), 10/11 (query only), 104 (no-op) and 1341 (custom); **OSC 4 and 12 are unhandled**. The feature has been requested but not implemented ([IJPL-218303](https://youtrack.jetbrains.com/projects/IJPL/issues/IJPL-218303/Support-OSC-11-escape-sequence-for-dynamic-terminal-background-colors)). It isn't a syntax or terminator problem either — five variants (BEL/ST × `#rrggbb`/`rgb:RR/GG/BB`/16-bit) were tried on real hardware and none had any effect.
+What it handles is OSC 0/1/2 (title), 7 (stub), 8 (hyperlinks), 10/11 (query only), 104 (no-op) and 1341 (custom); **OSC 4 and 12 are unhandled**. The feature has been requested but not implemented ([IJPL-218303](https://youtrack.jetbrains.com/issue/IJPL-218303), still open). It isn't a syntax or terminator problem either — five variants (BEL/ST × `#rrggbb`/`rgb:RR/GG/BB`/16-bit) were tried on real hardware and none had any effect. The embedded terminal's VT emulator is part of the IDE platform, so **no plugin can swap it out** either; the marketplace "terminal" plugins all just launch an external terminal.
 
-**Wall 2: a local Windows ConPTY consumes OSC 11.** VS Code's terminal (xterm.js) [fully supports setting via OSC 11](https://xtermjs.org/docs/api/vtfeatures/). In the very same VS Code, with the very same Claude Code TUI, **an SSH session to macOS does change the background** while a local Windows session does not. The only difference is whether the bytes pass through ConPTY, so that is where they die. ConPTY does forward **unrecognised** OSC sequences to the terminal ([microsoft/terminal#17313](https://github.com/microsoft/terminal/issues/17313)), but OSC 11 is a sequence conhost knows, so it gets consumed internally. Other implementations hit the same thing — Neovim's `background` auto-detection doesn't work on Windows Terminal because the OSC 11 query never gets a reply ([neovim#32238](https://github.com/neovim/neovim/issues/32238)).
+**VS Code: applied, but not retained.** Its terminal (xterm.js) [fully supports setting via OSC 11](https://xtermjs.org/docs/api/vtfeatures/), and VS Code itself shipped support in [#139645](https://github.com/microsoft/vscode/issues/139645) on 2021-12-22. But the colour is **reset to the theme default on tab switches (for editor-area terminals) and on theme re-application** ([#312815](https://github.com/microsoft/vscode/issues/312815), open). This plugin re-asserts the tint on every `UserPromptSubmit` to recover from that.
 
-Why Windows Terminal alone does change colour isn't established. Since its bundled ConPTY and the terminal are the same product, the default-colour change is presumably propagated internally to the renderer. Version recency doesn't explain it — VS Code bundles `1.25.2603`, newer than WT's `1.24.11911`.
+**Only default-background cells are affected.** OSC 11 changes the terminal's *default* background, so the colour lands on cells still drawn with the default background plus the leftover gutter where the character grid doesn't divide evenly. A bare shell (almost entirely default background) turns fully tinted; a full-screen TUI that paints its own cell colours leaves far less surface for it ([opentui#950](https://github.com/anomalyco/opentui/issues/950)). The same reasoning explains why DECSCNM — which JediTerm *does* implement — is barely visible: it swaps the default colours, and those are what the TUI has already overpainted.
 
-On IntelliJ-family IDEs you can peel off wall 2 by adding `-Dcom.pty4j.windows.disable.bundled.conpty=true` via `Help | Edit Custom VM Options` and restarting, which drops the bundled ConPTY in favour of the OS conhost. Wall 1 remains, so that alone won't change the colour.
+IntelliJ-family IDEs offer `-Dcom.pty4j.windows.disable.bundled.conpty=true` via `Help | Edit Custom VM Options` to drop the bundled ConPTY, but since forwarding was never the problem it changes nothing. The cause is on the JediTerm side.
 
-One warning about verifying this: **the measurement method was the most dangerous part.** Capturing the whole screen and sampling pixels reads whatever window is on top, so the moment the target window loses z-order you measure a different window and conclude "it doesn't work" about a route that does. Per-window `PrintWindow` (with `PW_RENDERFULLCONTENT`) measures independently of z-order.
+One warning about verifying this: **the measurement method was the most dangerous part.** The conclusion in this section flipped three times, and every time the cause was measuring something that couldn't answer the question.
+
+- Capturing the whole screen and sampling pixels reads whatever window is on top, so the moment the target window loses z-order you measure a different window and conclude "it doesn't work" about a route that does. Per-window `PrintWindow` (with `PW_RENDERFULLCONTENT`) measures independently of z-order.
+- The `GetConsoleScreenBufferInfoEx` colour table holds 16 entries; OSC 11 rewrites palette entry 262, so "internal state didn't change either" proves nothing.
+- The reliable method is to **create a ConPTY yourself and read its output pipe** — no terminal, no screenshot, no human eye, and it answers exactly one question: was it forwarded? Combined with a `ReadConsoleOutputCharacterW` read-back, "did the write land" and "did it reach the terminal" become separate, independently answerable questions.
 
 ## Testing
 
