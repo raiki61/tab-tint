@@ -38,8 +38,9 @@ export TAB_TINT_COLOR="#123456"
 
 OSC 11/111はターミナル固有の拡張ではなく標準的なエスケープシーケンスなので、対応するターミナルなら基本的にどれでも動く。
 
-- **動作確認済み**: VS Code統合ターミナル
-- **対応しているはず（未検証）**: iTerm2、kitty、GNOME Terminal等のVTEベース端末
+- **動作確認済み**: VS Code統合ターミナル（macOS）
+- **対応しているはず（未検証）**: iTerm2、kitty、GNOME Terminal等のVTEベース端末（Linux/macOS）
+- **Windows**: Git BashなどでOSC 11/111自体には対応した端末（Windows Terminal等）が必要。加えてClaude Code側に、hookが指す`.sh`スクリプトをbash経由で実行しないことがある既知の問題があるため（[#21847](https://github.com/anthropics/claude-code/issues/21847)）、`hooks.json`では`bash "..."`を明示的に前置している。実機未検証
 
 macOSの`ttysNNN`・Linuxの`pts/N`どちらの命名も扱うが、CIではLinux/macOS/Windows上でスクリプトの終了コードとJSON妥当性のみ検証しており、実機での色変化そのものはテストできていない。
 
