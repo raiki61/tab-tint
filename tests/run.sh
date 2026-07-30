@@ -41,8 +41,12 @@ out=$(hooks/tab-tint.sh bogus < /dev/null 2>&1); rc=$?
 check "invalid arg exits 1" "1" "$rc"
 check "invalid arg prints usage" "true" "$(echo "$out" | grep -q '^usage:' && echo true || echo false)"
 
-for f in .claude-plugin/plugin.json .claude-plugin/marketplace.json hooks/hooks.json; do
+for f in .claude-plugin/plugin.json .claude-plugin/marketplace.json hooks/hooks.json skills/off/SKILL.md skills/on/SKILL.md; do
   check "$f exists" "true" "$([ -f "$f" ] && echo true || echo false)"
+done
+
+for f in skills/off/SKILL.md skills/on/SKILL.md; do
+  check "$f has frontmatter description" "true" "$(head -1 "$f" | grep -q '^---$' && grep -q '^description:' "$f" && echo true || echo false)"
 done
 
 PYTHON=$(command -v python3 || command -v python)
