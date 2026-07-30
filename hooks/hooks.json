@@ -13,7 +13,7 @@
       { "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/tab-tint.sh\" off" } ] }
     ],
     "SessionEnd": [
-      { "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/tab-tint.sh\" off" } ] }
+      { "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/tab-tint.sh\" off end" } ] }
     ]
   }
 }
