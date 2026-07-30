@@ -2,7 +2,7 @@
 
 [![test](https://github.com/raiki61/tab-tint/actions/workflows/test.yml/badge.svg)](https://github.com/raiki61/tab-tint/actions/workflows/test.yml)
 
-> **English** — A Claude Code plugin that tints the terminal background while Claude is waiting for your input, and clears it the moment you reply or Claude resumes working. Useful when you run several Claude Code sessions side by side and want to tell at a glance which one is idle. Uses the standard OSC 11/111 escape sequences, so it isn't tied to one terminal emulator — confirmed working in VS Code's integrated terminal; iTerm2, kitty, and VTE-based terminals (GNOME Terminal etc.) support the same sequences. README is Japanese-first; ask Claude to translate if you need it.
+**日本語** | [English](README.en.md)
 
 Claude Codeのプラグイン。**応答待ちの間だけターミナル背景を控えめな色に変え、返信・作業再開で自動的に戻す。**
 
