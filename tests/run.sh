@@ -32,6 +32,17 @@ out=$(hooks/tab-tint.sh bogus < /dev/null 2>&1); rc=$?
 check "invalid arg exits 1" "1" "$rc"
 check "invalid arg prints usage" "true" "$(echo "$out" | grep -q '^usage:' && echo true || echo false)"
 
+# cmdの呼び出し方の回帰ガード。`//c`のまま渡すとcmdはスイッチとして解釈せず
+# 対話起動して即終了し、copyを実行しないのにexit 0を返す——「成功したように
+# 見えて何もしない」ので、実機で見るまで気づけない。コマンド全体を1つの文字列に
+# まとめる形も、cmdに`\"`がリテラルで渡りERROR_INVALID_NAMEになる。
+check "cmd is invoked with a single-slash /c" "true" \
+  "$(grep -q 'cmd.exe /c copy /b' hooks/tab-tint.sh && echo true || echo false)"
+check "cmd is not invoked with //c" "true" \
+  "$(grep -q 'cmd.exe //c' hooks/tab-tint.sh && echo false || echo true)"
+check "the copy command is not wrapped in one quoted string" "true" \
+  "$(grep -q 'cmd.exe /c "' hooks/tab-tint.sh && echo false || echo true)"
+
 # Windows側だけが状態ファイルを持つ（cmdの起動を状態が変わるときだけに抑えるため）。
 # POSIX側は書き込みが実質無償なので状態を持たない——その差をここで固定する。
 sd=$(mktemp -d "${TMPDIR:-/tmp}/tab-tint-test.XXXXXX")

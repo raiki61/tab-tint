@@ -79,11 +79,19 @@ win_write() {
     emit_seq "$action" > "$seq_file" 2>/dev/null || return 1
   fi
   win_path="${seq_file//\//\\}"
-  # MSYS_NO_PATHCONV/MSYS2_ARG_CONV_EXCLが無いと、msysの引数変換が引用符付きの
-  # Windowsパスを書き換えてcmdがERROR_INVALID_NAMEで落ちる。パスに空白が入りうる
-  # ので引用符は外せない。
+  # 呼び出し方に2つ落とし穴がある。どちらも「成功したように見えて何もしない」
+  # 形になるので注意:
+  #   - msysの引数変換を止める(MSYS_NO_PATHCONV/MSYS2_ARG_CONV_EXCL)必要がある。
+  #     止めないとWindowsパスが書き換えられる。ただし止めると`//c`→`/c`の変換も
+  #     効かなくなるので、スイッチは`/c`を直接渡す。`//c`のまま渡すとcmdは
+  #     スイッチとして解釈せず対話起動して即終了し、copyを実行しないのに
+  #     exit 0を返す
+  #   - コマンド全体を1つの文字列にまとめてはいけない。`cmd /c "... \"path\" ..."`
+  #     の形だとcmdに`\"`がリテラルで渡り(cmdはバックスラッシュエスケープを
+  #     解釈しない)ERROR_INVALID_NAMEになる。トークンごとに別の引数で渡せば
+  #     空白入りパスも通る
   MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
-    cmd.exe //c "copy /b \"$win_path\" CON >nul" >/dev/null 2>&1
+    cmd.exe /c copy /b "$win_path" CON >/dev/null 2>&1
 }
 
 # ---- 本体 ----
