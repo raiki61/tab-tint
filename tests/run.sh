@@ -32,6 +32,41 @@ out=$(hooks/tab-tint.sh bogus < /dev/null 2>&1); rc=$?
 check "invalid arg exits 1" "1" "$rc"
 check "invalid arg prints usage" "true" "$(echo "$out" | grep -q '^usage:' && echo true || echo false)"
 
+# Windows側だけが状態ファイルを持つ（cmdの起動を状態が変わるときだけに抑えるため）。
+# POSIX側は書き込みが実質無償なので状態を持たない——その差をここで固定する。
+sd=$(mktemp -d "${TMPDIR:-/tmp}/tab-tint-test.XXXXXX")
+run_isolated() {
+  TAB_TINT_STATE_DIR="$sd" CLAUDE_CODE_SESSION_ID=test-session \
+    hooks/tab-tint.sh "$@" < /dev/null > /dev/null 2>&1
+}
+
+if [ "${OS:-}" = "Windows_NT" ]; then
+  run_isolated on
+  check "windows: state file is written under TAB_TINT_STATE_DIR" "true" \
+    "$([ -f "$sd/state-test-session" ] && echo true || echo false)"
+  # 端末があれば"on"、届かなければ"unsupported"。どちらでも次回以降を短絡できる値。
+  state=$(cat "$sd/state-test-session" 2>/dev/null)
+  check "windows: state holds a short-circuitable value" "true" \
+    "$([ "$state" = "on" ] || [ "$state" = "unsupported" ] && echo true || echo false)"
+
+  run_isolated on
+  check "windows: repeating the same action never errors out" "0" "$?"
+
+  printf 'unsupported\n' > "$sd/state-test-session"
+  run_isolated on
+  check "windows: 'unsupported' is left untouched" "unsupported" "$(cat "$sd/state-test-session")"
+
+  printf 'on\n' > "$sd/state-test-session"
+  run_isolated off end
+  check "windows: 'off end' leaves no state file" "false" \
+    "$([ -f "$sd/state-test-session" ] && echo true || echo false)"
+else
+  run_isolated on
+  check "posix: no state file is created" "0" \
+    "$(find "$sd" -type f | wc -l | tr -d ' ')"
+fi
+rm -rf "$sd"
+
 for f in .claude-plugin/plugin.json .claude-plugin/marketplace.json hooks/hooks.json skills/off/SKILL.md skills/on/SKILL.md README.md README.en.md; do
   check "$f exists" "true" "$([ -f "$f" ] && echo true || echo false)"
 done
@@ -40,10 +75,26 @@ for f in skills/off/SKILL.md skills/on/SKILL.md; do
   check "$f has frontmatter description" "true" "$(head -1 "$f" | grep -q '^---$' && grep -q '^description:' "$f" && echo true || echo false)"
 done
 
-PYTHON=$(command -v python3 || command -v python)
-for f in .claude-plugin/plugin.json .claude-plugin/marketplace.json hooks/hooks.json; do
-  check "$f is valid JSON" "true" "$("$PYTHON" -c "import json,sys; json.load(open('$f', encoding='utf-8'))" 2>/dev/null && echo true || echo false)"
-done
+# WindowsのPATHに載っている /WindowsApps/python3 はMicrosoft Storeを開くだけの
+# スタブで、実行すると応答が返らずテストが止まる。実体のあるものだけを選ぶ
+# （実行して確かめる方法は、その確認自体がスタブで止まるので使えない）。
+pick_python() {
+  local name path
+  for name in python3 python py; do
+    path=$(command -v "$name" 2>/dev/null) || continue
+    case "$path" in */WindowsApps/*) continue ;; esac
+    printf '%s' "$path"; return 0
+  done
+  return 1
+}
+
+if PYTHON=$(pick_python); then
+  for f in .claude-plugin/plugin.json .claude-plugin/marketplace.json hooks/hooks.json; do
+    check "$f is valid JSON" "true" "$("$PYTHON" -c "import json,sys; json.load(open('$f', encoding='utf-8'))" 2>/dev/null && echo true || echo false)"
+  done
+else
+  echo "SKIP: no usable python found; JSON validation skipped"
+fi
 
 echo "---"
 echo "pass: $pass, fail: $fail"
