@@ -54,16 +54,27 @@ posix_write() {
 # 通るのはcmdの`copy /b <file> CON`。Windows Terminalで実際に背景色が変わることを
 # 確認済み(計測はPrintWindow。画面合成を撮ると前面のウィンドウを測ってしまう)。
 
-# 状態の置き場。プラグインとして動いているときはCLAUDE_PLUGIN_DATAが渡ってくる。
+# 状態の置き場。hookと手動コマンド(/tab-tint:on)で必ず同じ場所を見る必要がある。
+# ここでCLAUDE_PLUGIN_DATAを見てはいけない——hookには渡るが、スキルはBashツールから
+# 走るので渡らない。置き場が2つに割れると、手動で消灯した画面をhookが「まだonだ」と
+# 思い込んで二度と点けなくなる（状態を共有しているつもりで共有できていない)。
+# 状態は使い捨てなのでTempで足りる。セッション終了時に消す。
+#
 # バックスラッシュのままではbash側のファイル操作が通らないので、正規化して
 # 前スラッシュで持つ。cmdへ渡す直前にだけ戻す。
 win_state_dir() {
-  local dir
-  if [ -n "${TAB_TINT_STATE_DIR:-}" ]; then dir="$TAB_TINT_STATE_DIR"
-  elif [ -n "${CLAUDE_PLUGIN_DATA:-}" ]; then dir="$CLAUDE_PLUGIN_DATA"
-  else dir="${LOCALAPPDATA}/Temp/tab-tint"
-  fi
+  local dir="${TAB_TINT_STATE_DIR:-${LOCALAPPDATA}/Temp/tab-tint}"
   printf '%s' "${dir//\\//}"
+}
+
+win_state_file() {
+  printf '%s/state-%s' "$(win_state_dir)" "${CLAUDE_CODE_SESSION_ID:-shared}"
+}
+
+win_save_state() {
+  local state_file="$1" value="$2"
+  mkdir -p "$(dirname "$state_file")" 2>/dev/null || return 1
+  printf '%s\n' "$value" > "$state_file" 2>/dev/null || true
 }
 
 win_write() {
@@ -104,6 +115,26 @@ case "$action" in
   *) echo "usage: $0 {on|off} [source]" >&2; exit 1 ;;
 esac
 
+# 手動での切り替え(/tab-tint:on, /tab-tint:off)は必ず書きに行く。状態の短絡に
+# 任せると「もうonだ」「この端末はunsupportedだ」と判断して何も書かず、それでも
+# 成功したように見えてしまう。見た目を確認するための道具が黙ってno-opになるのは
+# 最悪なので、ここだけ短絡を外す。
+#
+# 書いたあとは状態も上書きする。書き戻さないと、手動で消灯した画面をhookが
+# 「まだonのはずだ」と短絡して二度と点けない。
+if [ "$source_event" = "force" ]; then
+  if ! is_windows; then
+    posix_write "$action" || true
+    exit 0
+  fi
+  if win_write "$action"; then
+    win_save_state "$(win_state_file)" "$action"
+  else
+    win_save_state "$(win_state_file)" "unsupported"
+  fi
+  exit 0
+fi
+
 if ! is_windows; then
   posix_write "$action" || exit 0
   exit 0
@@ -112,7 +143,7 @@ fi
 # Windowsは1回の書き込みにcmdの起動が要る。PreToolUseは毎ツール呼び出しで発火する
 # ので、状態が変わらないときに起動しないだけで体感がまるごと変わる。POSIX側は
 # 書き込みが実質無償なので、この短絡は入れない(挙動を変えないため)。
-state_file="$(win_state_dir)/state-${CLAUDE_CODE_SESSION_ID:-shared}"
+state_file="$(win_state_file)"
 prev=""
 if [ -r "$state_file" ]; then
   read -r prev < "$state_file" || true
@@ -138,6 +169,5 @@ fi
 if [ "$source_event" = "end" ]; then
   rm -f "$state_file" 2>/dev/null || true
 else
-  mkdir -p "$(dirname "$state_file")" 2>/dev/null || exit 0
-  printf '%s\n' "$new_state" > "$state_file" 2>/dev/null || true
+  win_save_state "$state_file" "$new_state" || exit 0
 fi
