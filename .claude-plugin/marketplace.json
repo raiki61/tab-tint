@@ -4,13 +4,13 @@
     "name": "raiki61"
   },
   "metadata": {
-    "description": "応答待ち中だけターミナル背景を控えめな色にするhookプラグイン",
+    "description": "作業中だけターミナル背景を控えめな色にするhookプラグイン",
     "version": "0.1.0"
   },
   "plugins": [
     {
       "name": "tab-tint",
-      "description": "Claude Codeが応答待ちの間だけターミナル背景色を変える。OSC 11/111を使うので対応ターミナルを選ばない（VS Code統合ターミナル / iTerm2 / kitty / VTE系で確認済み）。",
+      "description": "Claude Codeが作業中の間だけターミナル背景色を変え、止まったらいつもの色に戻す。OSC 11/111を使うので対応ターミナルを選ばない（VS Code統合ターミナル / iTerm2 / kitty / VTE系で確認済み）。",
       "source": "./",
       "strict": false
     }

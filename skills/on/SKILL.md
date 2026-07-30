@@ -7,8 +7,8 @@ disable-model-invocation: true
 
 ```bash
 script="${CLAUDE_PLUGIN_ROOT}/hooks/tab-tint.sh"
-[ -x "$script" ] || script=$(find ~/.claude/plugins -type f -name tab-tint.sh 2>/dev/null | head -1)
+[ -x "$script" ] || script=$(find ~/.claude*/plugins -type f -name tab-tint.sh 2>/dev/null | head -1)
 bash "$script" on
 ```
 
-実行したら「背景色を点灯しました」とだけ報告してください。長い説明は不要です。
+実行したら「背景色を作業中の色に変えました」とだけ報告してください。長い説明は不要です。

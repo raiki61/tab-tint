@@ -7,7 +7,7 @@ disable-model-invocation: true
 
 ```bash
 script="${CLAUDE_PLUGIN_ROOT}/hooks/tab-tint.sh"
-[ -x "$script" ] || script=$(find ~/.claude/plugins -type f -name tab-tint.sh 2>/dev/null | head -1)
+[ -x "$script" ] || script=$(find ~/.claude*/plugins -type f -name tab-tint.sh 2>/dev/null | head -1)
 bash "$script" off
 ```
 
