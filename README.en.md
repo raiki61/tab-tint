@@ -119,16 +119,23 @@ Text arrives; only OSC 11 disappears. The console is swallowing it.
 | Android Studio / IntelliJ | bundled with pty4j (`lib/pty4j/win/x86-64/OpenConsole.exe`) | no change |
 | VS Code | bundled with node-pty | no change |
 
-**Whether pty4j's ConPTY swallows it or JediTerm ignores it has not been isolated.** Version recency doesn't explain it — VS Code bundles `1.25.2603`, newer than WT's `1.24.11911`, and still nothing changes. JediTerm has an open request for OSC 11 ([IJPL-218303](https://youtrack.jetbrains.com/projects/IJPL/issues/IJPL-218303/Support-OSC-11-escape-sequence-for-dynamic-terminal-background-colors)), but it has not been confirmed as the cause.
+There are two walls, and which ones you hit depends on the environment.
 
-To isolate it:
+**Wall 1: JediTerm doesn't implement *setting* via OSC 11.** [`doProcessOsc()` in JediEmulator.java](https://github.com/JetBrains/jediterm/blob/master/core/src/com/jediterm/terminal/emulator/JediEmulator.java) reads:
 
-1. In a **plain shell tab with no Claude Code running**, type `printf '\033]11;#004a00\007'`. If the colour changes there, both the route and the terminal are fine and it was merely hidden behind a full-screen TUI's own rendering.
-2. On IntelliJ-family IDEs, add `-Dcom.pty4j.windows.disable.bundled.conpty=true` via `Help | Edit Custom VM Options` and restart. That drops the bundled ConPTY in favour of the OS conhost; if the colour then changes, pty4j's bundled ConPTY is the culprit.
+```java
+case 10:
+case 11:
+  return processColorQuery(args);   // only answers '?'; there is no setter
+```
 
-The same wall shows up in other implementations. Neovim's `background` auto-detection doesn't work on Windows Terminal because the OSC 11 query gets no reply ([neovim#32238](https://github.com/neovim/neovim/issues/32238)). ConPTY does forward **unrecognised** OSC sequences to the terminal ([microsoft/terminal#17313](https://github.com/microsoft/terminal/issues/17313)), but OSC 11 is a sequence conhost knows, so there is room for it to be consumed internally.
+What it handles is OSC 0/1/2 (title), 7 (stub), 8 (hyperlinks), 10/11 (query only), 104 (no-op) and 1341 (custom); **OSC 4 and 12 are unhandled**. The feature has been requested but not implemented ([IJPL-218303](https://youtrack.jetbrains.com/projects/IJPL/issues/IJPL-218303/Support-OSC-11-escape-sequence-for-dynamic-terminal-background-colors)). It isn't a syntax or terminator problem either — five variants (BEL/ST × `#rrggbb`/`rgb:RR/GG/BB`/16-bit) were tried on real hardware and none had any effect.
 
-Note this is also separate from terminal support. VS Code's terminal (xterm.js) fully supports OSC 11, and opening an SSH session to macOS in VS Code does change the background. It only fails when the bytes pass through a local Windows ConPTY.
+**Wall 2: a local Windows ConPTY consumes OSC 11.** VS Code's terminal (xterm.js) [fully supports setting via OSC 11](https://xtermjs.org/docs/api/vtfeatures/). In the very same VS Code, with the very same Claude Code TUI, **an SSH session to macOS does change the background** while a local Windows session does not. The only difference is whether the bytes pass through ConPTY, so that is where they die. ConPTY does forward **unrecognised** OSC sequences to the terminal ([microsoft/terminal#17313](https://github.com/microsoft/terminal/issues/17313)), but OSC 11 is a sequence conhost knows, so it gets consumed internally. Other implementations hit the same thing — Neovim's `background` auto-detection doesn't work on Windows Terminal because the OSC 11 query never gets a reply ([neovim#32238](https://github.com/neovim/neovim/issues/32238)).
+
+Why Windows Terminal alone does change colour isn't established. Since its bundled ConPTY and the terminal are the same product, the default-colour change is presumably propagated internally to the renderer. Version recency doesn't explain it — VS Code bundles `1.25.2603`, newer than WT's `1.24.11911`.
+
+On IntelliJ-family IDEs you can peel off wall 2 by adding `-Dcom.pty4j.windows.disable.bundled.conpty=true` via `Help | Edit Custom VM Options` and restarting, which drops the bundled ConPTY in favour of the OS conhost. Wall 1 remains, so that alone won't change the colour.
 
 One warning about verifying this: **the measurement method was the most dangerous part.** Capturing the whole screen and sampling pixels reads whatever window is on top, so the moment the target window loses z-order you measure a different window and conclude "it doesn't work" about a route that does. Per-window `PrintWindow` (with `PW_RENDERFULLCONTENT`) measures independently of z-order.
 

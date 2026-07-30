@@ -119,16 +119,23 @@ after:  attr=0x0007 table0=0x0C0C0C  ← OSC 11は内部状態すら変えずに
 | Android Studio / IntelliJ | pty4j同梱（`lib/pty4j/win/x86-64/OpenConsole.exe`） | 変わらない |
 | VS Code | node-pty同梱 | 変わらない |
 
-**「pty4jのConPTYが飲む」のか「JediTermが無視する」のかは切り分けられていない。** バージョンの新しさでは説明がつかない——VS Code同梱は`1.25.2603`でWT同梱（`1.24.11911`）より新しいのに変わらない。JediTermにはOSC 11の要望（[IJPL-218303](https://youtrack.jetbrains.com/projects/IJPL/issues/IJPL-218303/Support-OSC-11-escape-sequence-for-dynamic-terminal-background-colors)）が出ているが、それが原因だと確認できたわけではない。
+壁は2枚あり、環境によって当たる枚数が違う。
 
-切り分けたい場合の手順:
+**1枚目: JediTermはOSC 11の「設定」を実装していない。** [JediEmulator.javaの`doProcessOsc()`](https://github.com/JetBrains/jediterm/blob/master/core/src/com/jediterm/terminal/emulator/JediEmulator.java)は次のとおりで、OSC 10/11は**クエリ応答専用**。
 
-1. **Claude Codeを起動していない素のシェルタブ**で`printf '\033]11;#004a00\007'`を打つ。ここで変われば、経路も端末も生きていて、フルスクリーンTUIの描画に隠れていただけということになる
-2. IntelliJ系なら`Help | Edit Custom VM Options`に`-Dcom.pty4j.windows.disable.bundled.conpty=true`を足して再起動する。同梱ConPTYをやめてOSのconhostを使うので、これで変われば犯人はpty4j同梱のConPTY
+```java
+case 10:
+case 11:
+  return processColorQuery(args);   // '?' に答えるだけ。設定は無い
+```
 
-同種の壁は他の実装でも報告されている。Neovimの`background`自動判定はWindows TerminalでOSC 11のクエリに応答が返らず動かない（[neovim#32238](https://github.com/neovim/neovim/issues/32238)）。ConPTY自体は**未知の**OSCは端末へ転送するが（[microsoft/terminal#17313](https://github.com/microsoft/terminal/issues/17313)）、OSC 11はconhostが知っているシーケンスなので内部で消費される余地がある。
+扱われているのはOSC 0/1/2（タイトル）、7（スタブ）、8（ハイパーリンク）、10/11（クエリのみ）、104（no-op）、1341（独自）で、**OSC 4と12は未処理**。要望は出ているが未実装（[IJPL-218303](https://youtrack.jetbrains.com/projects/IJPL/issues/IJPL-218303/Support-OSC-11-escape-sequence-for-dynamic-terminal-background-colors)）。書式や終端子の問題ではない——BEL/ST、`#rrggbb`/`rgb:RR/GG/BB`/16bitの5通りを実機で試して全滅している。
 
-端末側の対応とは別問題である点にも注意。VS Codeの端末（xterm.js）はOSC 11をフルサポートしており、SSH越しのmacOSセッションをVS Codeで開けば背景色は変わる。変わらないのはWindowsローカルのConPTYを通る場合だけ。
+**2枚目: WindowsローカルのConPTYがOSC 11を消費する。** VS Codeの端末（xterm.js）はOSC 11の設定を[フルサポートしている](https://xtermjs.org/docs/api/vtfeatures/)。同じVS Code・同じClaude CodeのTUIでも、**SSH越しのmacOSセッションでは背景色が変わる**のに、Windowsローカルでは変わらない。違いはConPTYを通るかどうかだけなので、そこで消えていると判断できる。ConPTY自体は**未知の**OSCなら端末へ転送するが（[microsoft/terminal#17313](https://github.com/microsoft/terminal/issues/17313)）、OSC 11はconhostが知っているシーケンスなので内部で消費される。同種の報告は他の実装にもある——Neovimの`background`自動判定はWindows TerminalでOSC 11のクエリに応答が返らず動かない（[neovim#32238](https://github.com/neovim/neovim/issues/32238)）。
+
+Windows Terminalだけ色が変わる理由は確定していない。同梱ConPTYと端末が同一プロダクトなので、内部で既定色の変更が描画側へ伝わっているのだろうと推測している。バージョンの新しさでは説明がつかない——VS Code同梱は`1.25.2603`でWT同梱（`1.24.11911`）より新しい。
+
+IntelliJ系で2枚目だけ剥がしたい場合は、`Help | Edit Custom VM Options`に`-Dcom.pty4j.windows.disable.bundled.conpty=true`を足して再起動すると同梱ConPTYをやめてOSのconhostを使う。ただし1枚目（JediTerm側の未実装）は残るので、これだけでは色は変わらない。
 
 なお**この検証で一番危なかったのは計測方法**だった。画面全体をキャプチャして色を測ると、対象のウィンドウが前面から外れた瞬間に別のウィンドウを測ってしまい、動いている経路まで「効かない」と誤判定する。ウィンドウ単位で`PrintWindow`（`PW_RENDERFULLCONTENT`）を使えばz順に依存せず測れる。さらに確実なのは画面を撮らずに済ませることで、`GetConsoleScreenBufferInfoEx`のカラーテーブルと`ReadConsoleOutputCharacterW`の読み戻しなら、人の目もスクリーンショットも要らずに「書き込みが着地したか」「OSCが解釈されたか」を別々に判定できる。
 
