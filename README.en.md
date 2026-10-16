@@ -1,5 +1,7 @@
 # tab-tint
 
+> **No longer maintained (2026-10-16).** I now run parallel sessions in [herdr](https://herdr.dev), whose sidebar shows whether each session is working or waiting, for every session at once, so this plugin is no longer needed. The repository is archived.
+
 [![test](https://github.com/raiki61/tab-tint/actions/workflows/test.yml/badge.svg)](https://github.com/raiki61/tab-tint/actions/workflows/test.yml)
 
 [日本語](README.md) | **English**

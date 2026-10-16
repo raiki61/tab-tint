@@ -1,5 +1,7 @@
 # tab-tint
 
+> **保守を終えた（2026-10-16）。** 並行の会話は [herdr](https://herdr.dev) で回すようになり、herdr のサイドバーが会話ごとの「作業中・待ち」を全部の会話について一覧で出すので、このプラグインは要らなくなった。リポジトリはアーカイブした。
+
 [![test](https://github.com/raiki61/tab-tint/actions/workflows/test.yml/badge.svg)](https://github.com/raiki61/tab-tint/actions/workflows/test.yml)
 
 **日本語** | [English](README.en.md)
